@@ -76,7 +76,7 @@ Inputs:
 2. write\_parquet\_path: the path for writing out the subset data
 3. thres: We delete users who have interactions less than x (thres)
 4. percentage: We keep x% of the users
-5. from\_net\_id: kll482, for reading data from my Dumbo
+5. from\_net\_id: kll482, for reading data from my HDFS
 6. to\_net\_id: Your netid, for saving data to your HDFS
 
 I keep 1% of the users in the following code:
@@ -106,7 +106,7 @@ Inputs:
 4. rank_list: The list of multiple ranks for tuning
 5. regParam\_list: The list of multiple regParams for tuning
 6. path\_of\_model: We save the fitted estimator with this name or path
-7. from\_net\_id: kll482, for reading data from my Dumbo
+7. from\_net\_id: kll482, for reading data from my HDFS
 8. to\_net\_id: Your netid, for saving data to your HDFS
 
 Example:
