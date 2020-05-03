@@ -303,12 +303,10 @@ def top_k_regressionmetrics(dataset=None, k=10, regression_metrics="rmse", user=
 	#print("{}: {}".format(regression_metrics, round(result, 4)))
 	return result # return rmse, mae, or r2
 
-
-if __name__ == "__main__":
-	
-	### arguments ###
+def set_arguments():
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--net_id", help="Inputing your NetID")
+	parser.add_argument("--from_net_id", help="Inputing the netID for reading data")
+	parser.add_argument("--to_net_id", help="Inputing the netID for saving models")
 	parser.add_argument("--parquet_path", help="Specifying the path of the parquet file you want to read.")
 	parser.add_argument("--top_k", help="Only evaluating top k interations.")
 	parser.add_argument("--k_fold_split", help="Doing k-fold cross validation.")
@@ -318,6 +316,12 @@ if __name__ == "__main__":
 	parser.add_argument("--path_of_model", help="Save the fitted model with this path.")
 	parser.add_argument("--set_memory", help="Specifying the memory.")
 	args = parser.parse_args()
+	return args
+
+if __name__ == "__main__":
+	
+	# arguments 
+	args = set_arguments()
 
 	# initial some parameters from args
 	top_k = int(args.top_k)
@@ -327,16 +331,19 @@ if __name__ == "__main__":
 	path_of_model = args.path_of_model
 	k_fold_split = int(args.k_fold_split)
 
-	### setting ###
+	# setting 
 	spark = settings(args.set_memory)
-	hdfs_path = "hdfs:///user/"+args.net_id+"/goodreads/"
-	home_path = "/home/"+args.net_id+"/goodreads/"
+
+	# path
+	from_hdfs_path = "hdfs:///user/"+args.from_net_id+"/goodreads/"
+	to_hdfs_path = "hdfs:///user/"+args.to_net_id+"/goodreads/"
+	to_home_path = "/home/"+args.to_net_id+"/goodreads/"
 	#hdfs_path = ""
 	
 	### 1. read data ###
 	print("Reading the data.")
 	data_schema = create_schema_with_index()
-	data = spark.read.schema(data_schema).parquet(hdfs_path+"data/"+args.parquet_path)
+	data = spark.read.schema(data_schema).parquet(from_hdfs_path+"data/"+args.parquet_path)
 	# data = spark.read.parquet("indexed_poetry.parquet", schema=data_schema)
 	data.printSchema()
 
@@ -354,12 +361,10 @@ if __name__ == "__main__":
 	tuning_result = tuning_als(kfold_sets=kfold_sets, rank_list=rank_list,
 					regParam_list=regParam_list, k=top_k, maxIter=5,
 				   	metrics=my_metrics)
-	# tuning_result = tuning_als(kfold_sets=kfold_sets, rank_list=[5],
-	# 				regParam_list=[0.1], k=500, maxIter=5,
-	# 			   	metrics="rmse")
-	# best configuration
+
 	best_config = tuning_result[0]
 	best_rank, best_regParam = best_config["rank"], best_config["regParam"]
+
 	### 4. prediction on the test set ###
 	# train on the train set again, and then make prediction on the test set
 	# initialize ALS estimator
@@ -394,14 +399,15 @@ if __name__ == "__main__":
 	time_statement = "It takes {0} seconds to tune and train the model.".\
 						format(str(round(end_time-start_time, 2)))
 	print(time_statement)
+	
 	### 5. save the estimator (model) ###
 	# refer to https://spark.apache.org/docs/2.3.0/api/python/pyspark.ml.html#pyspark.ml.classification.LogisticRegression.save
 	print("Saving the estimator.")
-	model.write().overwrite().save(hdfs_path+"models/"+path_of_model)
+	model.write().overwrite().save(to_hdfs_path+"models/"+path_of_model)
 
 	# record all of the hyperparameter configurations, the best configuration, testing result
 	print("Recording the tuning history.")
-	with open(home_path+"history/"+"tuning_history.txt", "a+") as file:
+	with open(to_home_path+"history/"+"tuning_history.txt", "a+") as file:
 		write_args = (path_of_model,
 				   	  str(rank_list),
 				   	  str(regParam_list),

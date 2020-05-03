@@ -92,27 +92,7 @@ def create_schema_with_index():
 	])
 	return data_schema
 
-
-if __name__ == "__main__":
-	
-	### input arguments ###
-	parser = argparse.ArgumentParser()
-	parser.add_argument("--net_id", help="Inputing your NetID")
-	parser.add_argument("--read_parquet_path", help="Specifying the path of the parquet file you want to read.")
-	parser.add_argument("--write_parquet_path", help="Specifying the path of the parquet file you want to write.")
-	parser.add_argument("--thres", help="Delete the users with less than thres (k) interactions.")
-	parser.add_argument("--percentage", help="Downsampling the table with only k% of the user left.")
-	parser.add_argument("--set_memory", help="Specifying the memory.")
-	args = parser.parse_args()
-
-	### setting ###
-	spark = settings(args.set_memory)
-	hdfs_path = "hdfs:///user/"+args.net_id+"/goodreads/"
-	#hdfs_path = "" # for local testing
-
-	### 1. read the parquet file ###
-	#file = "subset_interactions.parquet"
-	print("Reading the file.")
+def create_schema_without_index():
 	data_schema = StructType([
     StructField("user_id", StringType()),
     StructField("book_id", StringType()),
@@ -121,8 +101,40 @@ if __name__ == "__main__":
     StructField("is_reviewed", IntegerType()), # for the data on HDFS
 	])
 	#StructField("is_review", IntegerType()), for the data on local
+	return data_schema
 
-	data = spark.read.schema(data_schema).parquet(hdfs_path+"data/"+args.read_parquet_path)
+def set_arguments():
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--from_net_id", help="Inputing the netID for reading data")
+	parser.add_argument("--to_net_id", help="Inputing the netID for saving models")
+	parser.add_argument("--read_parquet_path", help="Specifying the path of the parquet file you want to read.")
+	parser.add_argument("--write_parquet_path", help="Specifying the path of the parquet file you want to write.")
+	parser.add_argument("--thres", help="Delete the users with less than thres (k) interactions.")
+	parser.add_argument("--percentage", help="Downsampling the table with only k% of the user left.")
+	parser.add_argument("--set_memory", help="Specifying the memory.")
+	args = parser.parse_args()
+	return args
+
+if __name__ == "__main__":
+	
+	### input arguments ###
+	args = set_arguments()
+
+	### setting ###
+	spark = settings(args.set_memory)
+
+	# path
+	from_hdfs_path = "hdfs:///user/"+args.from_net_id+"/goodreads/"
+	to_hdfs_path = "hdfs:///user/"+args.to_net_id+"/goodreads/"
+	
+	#hdfs_path = "" # for local testing
+
+	### 1. read the parquet file ###
+	#file = "subset_interactions.parquet"
+	print("Reading the file.")
+	data_schema = create_schema_without_index()
+
+	data = spark.read.schema(data_schema).parquet(from_hdfs_path+"data/"+args.read_parquet_path)
 	# repartition data
 	data = data.repartition(40)
 
@@ -139,7 +151,7 @@ if __name__ == "__main__":
 	### 4. write out downsample_data ###
 	print("Writing the downsampling file.")
 	data_schema = create_schema_with_index()
-	downsample_data.write.option("schema", data_schema).parquet(hdfs_path+"data/"+args.write_parquet_path, mode="overwrite")
+	downsample_data.write.option("schema", data_schema).parquet(to_hdfs_path+"data/"+args.write_parquet_path, mode="overwrite")
 
 	print("Finish outputing the subset.")
 

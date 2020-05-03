@@ -25,26 +25,31 @@ def create_schema_with_index():
 	])
 	return data_schema
 
-
-if __name__ == "__main__":
-	
-	### input arguments ###
+def set_arguments():
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--net_id", help="Inputing your NetID")
+	parser.add_argument("--to_net_id", help="Inputing the netID for saving models")
 	parser.add_argument("--csv_path", help="Specifying the path of the csv file.")
 	parser.add_argument("--parquet_path", help="Specifying the path of the parquet file.")
 	parser.add_argument("--set_memory", help="Specifying the memory.")
 	args = parser.parse_args()
+	return args
 
-	### setting ###
+if __name__ == "__main__":
+	
+	# input arguments
+	args = set_arguments()
+
+	# setting 
 	spark = settings(args.set_memory)
-	hdfs_original_path = "hdfs:///user/bm106/pub/goodreads/"
-	hdfs_my_path = "hdfs:///user/"+args.net_id+"/goodreads/"
+
+	# path
+	hdfs_teachers_path = "hdfs:///user/bm106/pub/goodreads/"
+	to_hdfs_path = "hdfs:///user/"+args.net_id+"/goodreads/"
 	#hdfs_path = "" # for local testing
 
 	### 1. from csv to parquet ###
 	# mypath = "hdfs:///user/kll482/goodreads/poetry_interactions.csv"
 	data_schema = create_schema_with_index()
-	data = spark.read.csv(hdfs_original_path+args.csv_path, header=True, schema=data_schema)
+	data = spark.read.csv(hdfs_teachers_path+args.csv_path, header=True, schema=data_schema)
 
-	data.write.option("schema", data_schema).parquet(hdfs_my_path+"data/"+args.parquet_path, mode="overwrite")
+	data.write.option("schema", data_schema).parquet(to_hdfs_path+"data/"+args.parquet_path, mode="overwrite")
