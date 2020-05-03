@@ -10,7 +10,7 @@ import argparse
 
 
 def settings(memory):
-	### setting ###
+	# setting
 	conf = pyspark.SparkConf() \
 			.setAll([('spark.app.name', 'downsampling code'),
 					 ('spark.master', 'local'),
@@ -25,6 +25,10 @@ def remove_low_interaction(data, user="user_id", threshold=20):
 	'''
 	This function is to remove those users who have low interactions
 	(less than the threshold)
+	Input:
+	1. data
+	2. user: the user column
+	3. threshold: remove the users who have interactions lower than this threshold
 	'''
 	# 1. initialize n_users and n_samples
 	n_users = data.select(user).distinct().count()
@@ -44,6 +48,10 @@ def remove_low_interaction(data, user="user_id", threshold=20):
 def downsampling(data, user="user_id", percentage=0.01):
 	'''
 	This function is to keep k% of the users in the data
+	Input:
+	1. data
+	2. user: the user column
+	3. percentage: keep x percent of the users
 	'''
 	user_id_1_perc = data.select(user).distinct().sample(False, float(percentage), seed=123)
 	downsample_data = data.join(user_id_1_perc, user, how='inner').select(data.schema.names)
@@ -55,6 +63,7 @@ def create_subset(data, threshold, percentage, user="user_id", item="book_id"):
 	'''
 	This function is to remove some users with low-frequent interactions and 
 	downsample the dataframe since 100% of the data is too big for the system
+	Input:
 	1. data
 	2. threshold: users with less than k interactions would be removed
 	3. percentage: the percentage of the users we are going to keep by sampling
@@ -69,7 +78,10 @@ def create_subset(data, threshold, percentage, user="user_id", item="book_id"):
 
 def index_func(data, col_name):
 	'''
-	col_name: data.select(col_name)
+	This function is to transform the string column to an indexed integer column
+	Input:
+	1. data
+	2. col_name: the column which would become an index column
 	'''
 	indexer = data.select(col_name).distinct()\
 	  .orderBy(col_name) \

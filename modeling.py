@@ -43,6 +43,7 @@ def create_schema_with_index():
 def stratify_sampling(data, key, item, seed=123):
 	'''
 	This function is to extract approximately half of the interactions per user
+	Input:
 	1. key: user_id
 	2. item: book_id
 	'''
@@ -62,6 +63,7 @@ def stratify_sampling(data, key, item, seed=123):
 def customized_split_func(data, train, val_user, user, set_seed=123):
 	'''
 	This function is to hold out half of the interactions per user from validation to training.
+	Input:
 	1. data: the whole dataframe
 	2. train: the training set dataframe which contains all columns
 	3. val_user: the validation or testing set dataframe which only contains user_id
@@ -88,6 +90,7 @@ def kfold_split(data, user, k=4):
 	This function is to split the whole to training, validation, and test set.
 	From the basic setting of this project, we hold out 60% of the users for the training set, and
 	20% of the users for the testing set. Beyond the basic setting, we will do 4-fold cross validation.
+	Input:
 	1. data: the whole dataset
 	2. user: name of the user columns
 	'''
@@ -134,6 +137,8 @@ def train_test_split(kfold_sets):
 	we will need to train the train set again.
 	What we need to do is to join the train_data and val_data
 	in one of the kfold_sets we create early on.
+	Input:
+	1. kfold_sets: the k-fold data sets
 	'''
 	train_val_test_data = kfold_sets[0] # all k-fold sets have the same test set
 	full_train = unionAll(*train_val_test_data[:2])
@@ -234,9 +239,11 @@ def tuning_als(kfold_sets=None, rank_list=None, regParam_list=None,
 def top_k_rankingmetrics(dataset=None, k=10, ranking_metrics="precisionAt", user="user_id_index",
  						item="book_id_index", rating="rating", prediction="prediction"):
 	'''
-	k: only evaluate the performance of the top k items
-	ranking_metrics: precisionAt, meanAveragePrecision, ndcgAt 
-	user, item, prediction: column names; string type
+	This function is to compute the ranking metrics from predictions.
+	Input:
+	1. k: only evaluate the performance of the top k items
+	2. ranking_metrics: precisionAt, meanAveragePrecision, ndcgAt 
+	3. user, item, prediction: column names; string type
 
 	refer to https://vinta.ws/code/spark-ml-cookbook-pyspark.html
 	'''
@@ -280,9 +287,11 @@ def top_k_rankingmetrics(dataset=None, k=10, ranking_metrics="precisionAt", user
 def top_k_regressionmetrics(dataset=None, k=10, regression_metrics="rmse", user="user_id_index",
 					 item="book_id_index", rating="rating", prediction="prediction"):
 	'''
-	k: only evaluate the performance of the top k items
-	regression_metrics: rmse, mae, r2 
-	user, item, prediction: column names; string type
+	This function is to compute the regression metrics from predictions
+	Input:
+	1. k: only evaluate the performance of the top k items
+	2. regression_metrics: rmse, mae, r2 
+	3. user, item, prediction: column names; string type
 
 	refer to https://spark.apache.org/docs/2.2.0/ml-collaborative-filtering.html
 	'''
