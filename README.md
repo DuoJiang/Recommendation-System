@@ -60,7 +60,7 @@ Inputs:
 2. parquet\_path
 
 ```python
-spark-submit csv_to_parquet.py --net_id kll482 --csv_path goodreads_interactions.csv --parquet_path goodreads_interactions.parquet --set_memory 10g
+spark-submit csv_to_parquet.py --to_net_id kll482 --csv_path goodreads_interactions.csv --parquet_path goodreads_interactions.parquet --set_memory 10g
 ```
 
 ### step 2: Downsampling
@@ -77,7 +77,7 @@ Inputs:
 I keep 1% of the users in the following code:
 
 ``` 
-spark-submit downsampling.py --net_id kll482 --read_parquet_path goodreads_interactions.parquet --write_parquet_path one_percent_new.parquet --thres 20 --percentage 0.01 --set_memory 10g
+spark-submit downsampling.py --from_net_id kll482 --to_net_id kll482 --read_parquet_path goodreads_interactions.parquet --write_parquet_path one_percent_new.parquet --thres 20 --percentage 0.01 --set_memory 10g
 ```
 
 After running ** downsampling.py** with the above inputs, I got the following two notifications.
@@ -111,7 +111,7 @@ Example:
 - path\_of\_model: first_model
 
 ```
-spark-submit modeling.py --net_id kll482 --parquet_path one_percent.parquet --k_fold_split 4 --top_k 500 --metrics precisionAt --rank_list [5,10,20] --regParam_list [0.001,0.01,0.1,1] --path_of_model model_1_precisionAt --set_memory 12g
+spark-submit modeling.py --from_net_id kll482 --to_net_id kll482 --parquet_path one_percent.parquet --k_fold_split 4 --top_k 500 --metrics rmse --rank_list [5,10] --regParam_list [0.001,0.01, 0.1] --path_of_model model_1_rmse --set_memory 15g
 ```
 
 ## Note: Absolute Path
