@@ -111,7 +111,7 @@ Example:
 - path\_of\_model: first_model
 
 ```
-spark-submit modeling.py --from_net_id kll482 --to_net_id kll482 --parquet_path one_percent.parquet --k_fold_split 4 --top_k 500 --metrics rmse --rank_list [5,10] --regParam_list [0.001,0.01, 0.1] --path_of_model model_1_rmse --set_memory 15g
+spark-submit modeling.py --from_net_id kll482 --to_net_id kll482 --parquet_path one_percent.parquet --k_fold_split 4 --top_k 500 --metrics rmse --rank_list [5,10] --regParam_list [0.001,0.01,0.1] --path_of_model model_1_rmse --set_memory 15g
 ```
 
 ## Note: Absolute Path
