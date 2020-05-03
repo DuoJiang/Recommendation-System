@@ -34,7 +34,7 @@ def remove_low_interaction(data, user="user_id", threshold=20):
 	n_users = data.select(user).distinct().count()
 	n_samples = data.count()
 	# 2. count the interaction and filter the users 
-	user_id_frequent = data.groupBy(user).count().filter("count>"+threshold).select(user)
+	user_id_frequent = data.groupBy(user).count().filter("count>="+threshold).select(user)
 	# print the percentage of the user_id which is removed
 	print("I remove {0}% of the total users who have less than {1} iteractions.".\
 		  format(str(round((1-user_id_frequent.count()/n_users)*100, 2)), threshold))

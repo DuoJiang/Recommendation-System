@@ -339,6 +339,7 @@ if __name__ == "__main__":
 	regParam_list = eval(args.regParam_list)
 	path_of_model = args.path_of_model
 	k_fold_split = int(args.k_fold_split)
+	filename = args.parquet_path
 
 	# setting 
 	spark = settings(args.set_memory)
@@ -352,7 +353,7 @@ if __name__ == "__main__":
 	### 1. read data ###
 	print("Reading the data.")
 	data_schema = create_schema_with_index()
-	data = spark.read.schema(data_schema).parquet(from_hdfs_path+"data/"+args.parquet_path)
+	data = spark.read.schema(data_schema).parquet(from_hdfs_path+"data/"+filename)
 	# data = spark.read.parquet("indexed_poetry.parquet", schema=data_schema)
 	data.printSchema()
 
@@ -418,6 +419,7 @@ if __name__ == "__main__":
 	print("Recording the tuning history.")
 	with open(to_home_path+"history/"+"tuning_history.txt", "a+") as file:
 		write_args = (path_of_model,
+					  filename,
 				   	  str(rank_list),
 				   	  str(regParam_list),
 				   	  best_rank,
@@ -426,11 +428,12 @@ if __name__ == "__main__":
 				   	  round(test_metrics, 4),
 				   	  time_statement)
 		file.write("Model Path: {0}\n" \
-				   "Rank List: {1}\n" \
-				   "RegParam List: {2}\n" \
-				   "Best Rank: {3}; Best RegParam: {4}\n" \
-				   "Test Result ({5}): {6}" \
-				   "Note: {7}\n\n" \
+				   "Data: {1}\n" \
+				   "Rank List: {2}\n" \
+				   "RegParam List: {3}\n" \
+				   "Best Rank: {4}; Best RegParam: {5}\n" \
+				   "Test Result ({6}): {7}\n" \
+				   "Note: {8}\n\n" \
 				   "---------" \
 				   "\n\n" \
 				   .format(*write_args))
