@@ -1,0 +1,16 @@
+Model Path: first_model
+Rank List: [5]
+RegParam List: [0.1]
+Best Rank: 5; Best RegParam: 0.1
+Test Result (rmse): 2.1161
+
+---------
+
+Model Path: second_model
+Rank List: [5]
+RegParam List: [0.1]
+Best Rank: 5; Best RegParam: 0.1
+Test Result (precisionAt): 0.8099
+
+---------
+
