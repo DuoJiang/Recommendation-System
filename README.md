@@ -2,6 +2,8 @@
 
 **Course: DS-GA 1004 Big Data**
 
+Student Name: Kuan-Lin Liu
+
 ## Instruction
 
 ### Short Introduction
@@ -58,6 +60,7 @@ Inputs:
 
 1. csv\_path
 2. parquet\_path
+3. to\_net\_id: Your netid, for saving data to your HDFS
 
 ```python
 spark-submit csv_to_parquet.py --to_net_id kll482 --csv_path goodreads_interactions.csv --parquet_path goodreads_interactions.parquet --set_memory 10g
@@ -73,6 +76,8 @@ Inputs:
 2. write\_parquet\_path: the path for writing out the subset data
 3. thres: We delete users who have interactions less than x (thres)
 4. percentage: We keep x% of the users
+5. from\_net\_id: kll482, for reading data from my Dumbo
+6. to\_net\_id: Your netid, for saving data to your HDFS
 
 I keep 1% of the users in the following code:
 
@@ -101,6 +106,8 @@ Inputs:
 4. rank_list: The list of multiple ranks for tuning
 5. regParam\_list: The list of multiple regParams for tuning
 6. path\_of\_model: We save the fitted estimator with this name or path
+7. from\_net\_id: kll482, for reading data from my Dumbo
+8. to\_net\_id: Your netid, for saving data to your HDFS
 
 Example:
 
