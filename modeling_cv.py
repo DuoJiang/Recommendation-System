@@ -28,19 +28,40 @@ def settings(memory):
 			.getOrCreate()
 	return spark
 
-def create_schema():
-    data_schema = StructType([
-        StructField("user_id", IntegerType()),
-        StructField("book_id", IntegerType()),
-        StructField("is_read", IntegerType()),
-        StructField("rating", IntegerType()),
-        StructField("is_reviewed", IntegerType())  # for the data on HDFS
-    ])
-    # StructField("is_review", IntegerType()), for the data on local
-    return data_schema
+def create_schema_with_index():
+	data_schema = StructType([
+    StructField("user_id", StringType()),
+    StructField("book_id", StringType()),
+    StructField("is_read", IntegerType()),
+    StructField("rating", IntegerType()),
+    StructField("is_reviewed", IntegerType()),
+    StructField("row_index", IntegerType()),
+    StructField("book_id_index", IntegerType()),
+    StructField("user_id_index", IntegerType())
+	])
+	return data_schema
 
+def stratify_sampling(data, key, item, seed=123):
+	'''
+	This function is to extract approximately half of the interactions per user
+	Input:
+	1. key: user_id
+	2. item: book_id
+	'''
+	# step 1: shuffle the rows
+	data = data.orderBy(rand(seed=seed))
+	# step 2: partition by key # user_id
+	window = Window.partitionBy(key).orderBy(item) # item: book_id
+	# step 3: get row index for partition
+	new_data = data.withColumn("index_by_"+key,
+					   F.row_number() \
+					   .over(window))
+	# step 4: get even number on index_by_key
+	even_data = new_data.where(col("index_by_"+key)%2 == 0).select(data.schema.names)
+	odd_data = new_data.where(col("index_by_"+key)%2 != 0).select(data.schema.names)
+	return even_data, odd_data
 
-def customized_split_func(data, train, val_user, user="user_id", set_seed=123):
+def customized_split_func(data, train, val_user, user="user_id_index", set_seed=123):
 	'''
 	This function is to hold out half of the interactions per user from validation to training.
 	Output:
@@ -67,7 +88,72 @@ def unionAll(*dataframes):
 	'''
 	return reduce(DataFrame.unionAll, dataframes)
 
-def train_val_test_split(data, user="user_id"):
+def kfold_split(data, user, k=4):
+	'''
+	This function is to split the whole to training, validation, and test set.
+	From the basic setting of this project, we hold out 60% of the users for the training set, and
+	20% of the users for the testing set. Beyond the basic setting, we will do 4-fold cross validation.
+	However, I only want to store the row index into the dictionary.
+	Input:
+	1. data: the whole dataset
+	2. user: name of the user columns
+	'''
+	# 20%
+	# 80: 20, [20 , 20, 20] 
+	# 1. initialize a dictionay to store the k-fold DataFrame
+	kfold_dict = {}
+	# 2. let's first hold out users for the testing set. we will create the DataFrame later.
+	user_split_for_test = data.select(user).distinct().randomSplit([0.8, 0.2], seed=123)
+	test_user = user_split_for_test[1]
+	train_hold_out_user = user_split_for_test[0]
+	# 3. use the 80% of the users to do k-fold.
+	percentage = 0.8/k
+	k_fold = [percentage]*k # [0.2]*4 if k==4
+	kfold_user = train_hold_out_user.randomSplit(k_fold, seed=123) # kfold_user is a k-element list of DataFrame
+	# 4. let's create cross-validation dataset
+	for i in range(len(kfold_user)): #[20, 20, 20, 20]
+		# let kfold_user[i] be the val
+		hold_dfs = kfold_user[:i] + kfold_user[i+1:]
+		train_user = unionAll(*hold_dfs) # users in the train set
+		val_user = kfold_user[i] # users in the val set
+
+		# join data and train by user to get the training dataframe
+		train_only_data = data.join(train_user, on=user, how='inner').select(data.schema.names) # user_split_sample is a 5-element list of user_id 
+		
+		# in the validation set, leave half of the interactions per user to the training set
+		validation_result = customized_split_func(data=data,
+												 train=train_only_data,
+												 val_user=val_user,
+												 user=user)
+		val_data = validation_result[1]
+		train_val_data = validation_result[0] # train + half val
+		# in the test set, leave half of the interactions per user to the training set
+		test_result = customized_split_func(data=data,
+											train=train_val_data,
+											val_user=test_user,
+											user=user) # test_user from the beginning step
+		test_data = test_result[1]
+		final_train_data = test_result[0] # train + half val + half test
+		# add train, val , test to the dict for the i fold
+		kfold_dict[i] = [final_train_data, val_data, test_data]
+	# return the k-fold dictionay
+	return kfold_dict
+
+def train_test_split(kfold_sets):
+	'''
+	After finding the best configuration,
+	we will need to train the train set again.
+	What we need to do is to join the train_data and val_data
+	in one of the kfold_sets we create early on.
+	Input:
+	1. kfold_sets: the k-fold data sets (list)
+	'''
+	train_val_test_data = kfold_sets[0] # all k-fold sets have the same test set
+	full_train = unionAll(*train_val_test_data[:2])
+	full_test = train_val_test_data[2]
+	return full_train, full_test
+
+def train_val_test_split(data, user="user_id_index"):
 	'''
 	If we don't perform k-fold cross validation, we just split the dataset into three subsets.
 	'''
@@ -78,8 +164,8 @@ def train_val_test_split(data, user="user_id"):
 		user_train_val_test_split[0],
 		on=user,
 		how='inner'
-		).select(data.schema.names) # user_split_sample is a 5-element list of user_id
-
+		).select(data.schema.names) # user_split_sample is a 5-element list of user_id 
+		
 	# in the validation set, leave half of the interactions per user to the training set
 	train_data, val_data = customized_split_func(
 		data=data,
@@ -96,22 +182,22 @@ def train_val_test_split(data, user="user_id"):
 		)
 	return train_data, val_data, test_data
 
-def tuning_als(train_data, val_data, rank_list=None, regParam_list=None,
+def tuning_als(train_val_test=None, kfold_sets=None, rank_list=None, regParam_list=None,
 			   metrics=None, k=10, maxIter=5, seed=123,
 			   user="user_id", item="book_id", rating="rating"):
 	'''
 	This function is to run custom cross validation and metrics\
 	Input:
-	1. train_data: training data set
-	2. val_data: validation data set
+	1. train_val_test: a list of training, validation, testing dataset
+	2. kfold_sets: k-fold subsets for cross validation (not necessary)
 	3. rank_list: a list of ranks for tuning
 	4. regParam_list: a list of regulization parameters for tuning
 	5. train_data: train set
 	6. val_data: validation set
 	7. k: top k items for evaluation
-	8. ranking_metrics: the function uses the ranking metrics if this is not False;
+	8. ranking_metrics: the function uses the ranking metrics if this is not False; 
 						{precisionAt, meanAveragePrecision, ndcgAt}
-	9. regression_metrics: the function uses the regression metrics if this is not False;
+	9. regression_metrics: the function uses the regression metrics if this is not False; 
 							{rmse, mae, r2}
 	output:
 	1. best_param_dict: a dictionary of the best configuration
@@ -120,8 +206,8 @@ def tuning_als(train_data, val_data, rank_list=None, regParam_list=None,
 	if rank_list == None or regParam_list == None:
 		print("Error! Please enter rank_list or regParam_list.")
 		return
-	if train_data == None or val_data == None:
-		print("Error! You must input the data sets.")
+	if kfold_sets == None:
+		print("Error! You must enter the k-fold sets")
 		return
 	if metrics == None:
 		print("Error! You must select a metric.")
@@ -129,75 +215,80 @@ def tuning_als(train_data, val_data, rank_list=None, regParam_list=None,
 	# tuning_table: for storing the hyperparameter and metrics
 	tuning_table = {"rank": [],
 					"regParam": [],
-					metrics: []}
-
+					"avg_metrics": []}
 	# a combination of all tuning hyperparameters
 	param_combination = list(product(rank_list, regParam_list))
 	for i, params in enumerate(param_combination):
 		print("Start " + str(i+1) + " configuration.")
-		# initialize parameters, total_metrcs
+		# initialize parameters, total_metrcs 
 		rank, regParam = params[0], params[1]
-
-		# append rank and regParam into the tuning table
+		total_metrics = [] # list: for storing metrics in each k-fold interaction
+		# storing the rank and regParam
 		tuning_table["rank"].append(rank)
 		tuning_table["regParam"].append(regParam)
-
-		# initializa, fit, transform the ALS model
-		als = ALS(rank=rank, maxIter=maxIter, regParam = regParam, seed=123,
-	              coldStartStrategy="drop", userCol=user,
-	              itemCol=item, ratingCol=rating,
-	              implicitPrefs=False, nonnegative=True)
-		model = als.fit(train_data)
-		val_pred = model.transform(val_data)
-		# evaluation
-		if metrics in ["rmse", "mae", "r2"]:
-			# we use the regression metrics
-			metrics_result = top_k_regressionmetrics(
-								dataset=val_pred, k=k,
-								regression_metrics=metrics,
-								user=user, item=item, rating=rating,
-								prediction="prediction")
-		elif metrics in ["precisionAt", "meanAveragePrecision", "ndcgAt"]:
-			# we use the ranking metrics
-			metrics_result = top_k_rankingmetrics(
-								dataset=val_pred, k=k,
-								ranking_metrics=metrics,
-								user=user, item=item, rating=rating,
-								prediction="prediction")
-
+		for k_index in range(len(kfold_sets)):
+			# initialize train set, validation set
+			train_data, val_data = kfold_sets[k_index][0], kfold_sets[k_index][1]
+			# initializa ALS
+			#print("xxxx")
+			als = ALS(rank=rank, maxIter=maxIter, regParam = regParam, seed=123, 
+		              coldStartStrategy="drop", userCol=user, 
+		              itemCol=item, ratingCol=rating,
+		              implicitPrefs=False, nonnegative=True)
+			#print("aaaa")
+			model = als.fit(train_data)
+			#print("bbbb")
+			predictions = model.transform(val_data)
+			#print("cccc")
+			# evaluation
+			if metrics in ["rmse", "mae", "r2"]:
+				# we use the regression metrics
+				metrics_result = top_k_regressionmetrics(
+									dataset=predictions, k=k,
+									regression_metrics=metrics,
+									user=user, item=item, rating=rating,
+									prediction="prediction")
+			elif metrics in ["precisionAt", "meanAveragePrecision", "ndcgAt"]:
+				# we use the ranking metrics
+				metrics_result = top_k_rankingmetrics(
+									dataset=predictions, k=k,
+									ranking_metrics=metrics,
+									user=user, item=item, rating=rating,
+									prediction="prediction")
+			total_metrics.append(metrics_result)
+			#print(k_index+1)
 		print("Finish " + str(i+1) + " configuration.")
-		# append metrics into the tuning table
-		tuning_table[metrics].append(round(metrics_result, 4))
-
+		# compute average metrics for k-fold cross validation
+		avg_metrics = np.mean(total_metrics)
+		tuning_table["avg_metrics"].append(avg_metrics)
 	# find the best hyperparamters from the average metrics of k-fold
 	best_param_dict = {}
 	if metrics in ["rmse", "mae", "r2"]:
 		# we use the regression metrics (select minimum)
-		best_index = np.argmin(tuning_table[metrics])
+		best_index = np.argmin(tuning_table["avg_metrics"])
 	elif metrics in ["precisionAt", "meanAveragePrecision", "ndcgAt"]:
 		# we use the ranking metrics (select maximum)
-		best_index = np.argmax(tuning_table[metrics])
-
+		best_index = np.argmax(tuning_table["avg_metrics"])
 	# store the best configuration into the dictionary
 	best_param_dict["rank"] = tuning_table["rank"][best_index]
 	best_param_dict["regParam"] = tuning_table["regParam"][best_index]
-	best_param_dict[metrics] = tuning_table[metrics][best_index]
+	best_param_dict["avg_metrics"] = tuning_table["avg_metrics"][best_index]
 	return best_param_dict, tuning_table
 
-def top_k_rankingmetrics(dataset=None, k=10, ranking_metrics="precisionAt", user="user_id",
+def top_k_rankingmetrics(dataset=None, k=10, ranking_metrics="precisionAt", user="user_id_index",
  						item="book_id", rating="rating", prediction="prediction"):
 	'''
 	This function is to compute the ranking metrics from predictions.
 	Input:
 	1. k: only evaluate the performance of the top k items
-	2. ranking_metrics: precisionAt, meanAveragePrecision, ndcgAt
+	2. ranking_metrics: precisionAt, meanAveragePrecision, ndcgAt 
 	3. user, item, prediction: column names; string type
 
 	refer to https://vinta.ws/code/spark-ml-cookbook-pyspark.html
 	'''
 	if dataset == None:
 		print("Error! Please specify a dataset.")
-		return
+		return 
 	# prediction table
 	windowSpec = Window.partitionBy(user).orderBy(col(prediction).desc())
 	perUserPredictedItemsDF = dataset \
@@ -238,7 +329,7 @@ def top_k_regressionmetrics(dataset=None, k=10, regression_metrics="rmse", user=
 	This function is to compute the regression metrics from predictions
 	Input:
 	1. k: only evaluate the performance of the top k items
-	2. regression_metrics: rmse, mae, r2
+	2. regression_metrics: rmse, mae, r2 
 	3. user, item, prediction: column names; string type
 
 	refer to https://spark.apache.org/docs/2.2.0/ml-collaborative-filtering.html
@@ -266,7 +357,7 @@ def set_arguments():
 	parser.add_argument("--to_net_id", help="Inputing the netID for saving models")
 	parser.add_argument("--parquet_path", help="Specifying the path of the parquet file you want to read.")
 	parser.add_argument("--top_k", help="Only evaluating top k interations.")
-	#parser.add_argument("--k_fold_split", help="Doing k-fold cross validation.")
+	parser.add_argument("--k_fold_split", help="Doing k-fold cross validation.")
 	parser.add_argument("--metrics", help="The metrics for cross validation and measurement.")
 	parser.add_argument("--rank_list", help="A list of ranks for tuning.")
 	parser.add_argument("--regParam_list", help="A list of regularization parameters for tuning.")
@@ -276,8 +367,8 @@ def set_arguments():
 	return args
 
 if __name__ == "__main__":
-
-	# arguments
+	
+	# arguments 
 	args = set_arguments()
 
 	# initial some parameters from args
@@ -286,10 +377,10 @@ if __name__ == "__main__":
 	rank_list = eval(args.rank_list)
 	regParam_list = eval(args.regParam_list)
 	path_of_model = args.path_of_model
-	#k_fold_split = int(args.k_fold_split)
+	k_fold_split = int(args.k_fold_split)
 	filename = args.parquet_path
 
-	# setting
+	# setting 
 	spark = settings(args.set_memory)
 
 	# path
@@ -297,16 +388,17 @@ if __name__ == "__main__":
 	to_hdfs_path = "hdfs:///user/"+args.to_net_id+"/goodreads/"
 	to_home_path = "/home/"+args.to_net_id+"/goodreads/"
 	#hdfs_path = ""
-
+	
 	### 1. read data ###
 	print("Reading the data.")
-	data_schema = create_schema()
+	data_schema = create_schema_with_index()
 	data = spark.read.schema(data_schema).parquet(from_hdfs_path+"data/"+filename)
 	# data = spark.read.parquet("indexed_poetry.parquet", schema=data_schema)
+	data.printSchema()
 
-	### 2. split data ###
-	print("Splitting the data set.")
-	train_data, val_data, test_data = train_val_test_split(data)
+	### 2. get k-fold cross validation ###
+	print("Creating k-fold training and validation sets.")
+	kfold_sets = kfold_split(data, "user_id", k=k_fold_split)
 
 	### 3. tuning ALS by cross validation ###
 	start_time = time.time()
@@ -315,46 +407,40 @@ if __name__ == "__main__":
 	# cross validation tuning
 	# rank_list = [5] # [5, 10, 15, 20]
 	# regParam_list = [0.01] # np.logspace(start=-3, stop=2, num=6)
-	tuning_result = tuning_als(
-		train_data=train_data, val_data=val_data,
-		rank_list=rank_list, regParam_list=regParam_list,
-		k=top_k, maxIter=5, metrics=my_metrics
-	)
+	tuning_result = tuning_als(kfold_sets=kfold_sets, rank_list=rank_list,
+					regParam_list=regParam_list, k=top_k, maxIter=5,
+				   	metrics=my_metrics)
 
-	tuning_hist = tuning_result[1]
 	best_config = tuning_result[0]
 	best_rank, best_regParam = best_config["rank"], best_config["regParam"]
 
 	### 4. prediction on the test set ###
-	# after find the best hyperparameters, we train on the train set again, and then make prediction on the test set
-	# union train_data and val_data together
-	new_train_data = unionAll(*[train_data, val_data])
-
+	# train on the train set again, and then make prediction on the test set
 	# initialize ALS estimator
 	print("Re-training on the train set and predicting on the test set.")
 	als = ALS(rank=best_rank, regParam = best_regParam, maxIter=5,
-			  seed=123, coldStartStrategy="drop", userCol="user_id",
-              itemCol="book_id", ratingCol="rating",
+			  seed=123, coldStartStrategy="drop", userCol="user_id_index", 
+              itemCol="book_id_index", ratingCol="rating",
               implicitPrefs=False, nonnegative=True)
-
-	model = als.fit(new_train_data)
-	test_pred = model.transform(test_data) # predictions is a DataFrame with prediction column
-	test_pred.show(20)
+	# train test split
+	train_data, test_data = train_test_split(kfold_sets=kfold_sets)
+	model = als.fit(train_data)
+	predictions = model.transform(test_data) # predictions is a DataFrame with prediction column
 	# compute ranking metrics on the test set
 	if my_metrics in ["rmse", "mae", "r2"]:
-		test_metrics = top_k_regressionmetrics(dataset=test_pred,
+		test_metrics = top_k_regressionmetrics(dataset=predictions,
 						k=top_k,
 						regression_metrics=my_metrics,
-						user="user_id",
-						item="book_id",
+						user="user_id_index",
+						item="book_id_index",
 						rating="rating",
 						prediction="prediction")
 	elif my_metrics in ["precisionAt", "meanAveragePrecision", "ndcgAt"]:
-		test_metrics = top_k_rankingmetrics(dataset=test_pred,
+		test_metrics = top_k_rankingmetrics(dataset=predictions,
 						k=top_k,
 						ranking_metrics=my_metrics,
-						user="user_id",
-						item="book_id",
+						user="user_id_index",
+						item="book_id_index",
 						rating="rating",
 						prediction="prediction")
 
@@ -362,7 +448,7 @@ if __name__ == "__main__":
 	time_statement = "It takes {0} seconds to tune and train the model.".\
 						format(str(round(end_time-start_time, 2)))
 	print(time_statement)
-
+	
 	### 5. save the estimator (model) ###
 	# refer to https://spark.apache.org/docs/2.3.0/api/python/pyspark.ml.html#pyspark.ml.classification.LogisticRegression.save
 	print("Saving the estimator.")
@@ -375,7 +461,6 @@ if __name__ == "__main__":
 					  filename,
 				   	  str(rank_list),
 				   	  str(regParam_list),
-				   	  str(tuning_hist),
 				   	  best_rank,
 				   	  best_regParam,
 				   	  my_metrics,
@@ -385,10 +470,9 @@ if __name__ == "__main__":
 				   "Data: {1}\n" \
 				   "Rank List: {2}\n" \
 				   "RegParam List: {3}\n" \
-				   "Tuning History: {4}\n" \
-				   "Best Rank: {5}; Best RegParam: {6}\n" \
-				   "Test Result ({7}): {8}\n" \
-				   "Note: {9}\n\n" \
+				   "Best Rank: {4}; Best RegParam: {5}\n" \
+				   "Test Result ({6}): {7}\n" \
+				   "Note: {8}\n\n" \
 				   "---------" \
 				   "\n\n" \
 				   .format(*write_args))
